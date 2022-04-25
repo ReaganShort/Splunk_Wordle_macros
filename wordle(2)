@@ -77,7 +77,7 @@ makeresults
     ```replace null exclusion sets with a dot to indicate any letter possible in that position ```
 | rex field=final_regex mode=sed "s/\[\^\]/./g"
     ```pass final_regex into a new search to generate list of matching words and include guess context ```
-| map search="| inputlookup bv_words.csv | regex words=\"$final_regex$\" | eval guess=\"$guess$\", regex_pattern=\"$final_regex$\" "
+| map search="| inputlookup words.csv | regex words=\"$final_regex$\" | eval guess=\"$guess$\", regex_pattern=\"$final_regex$\" "
 | rename words as possible_solutions 
 | rex field=possible_solutions mode=sed "s/(?=\\w)/ /g" 
 | makemv possible_solutions delim=" " 
