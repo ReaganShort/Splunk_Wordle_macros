@@ -80,7 +80,7 @@ fields regex_pattern
 | rex field=final_regex "\(\?\=(?<all_G_edge_case>\w{5}).|$" 
 | eval final_regex=if(match(all_G_edge_case,"\w{5}"),all_G_edge_case,final_regex) 
 | rex field=final_regex mode=sed "s/\[\^\]/./g"
-| map search="| inputlookup bv_words.csv | regex words=\"$final_regex$\" | eval guess=\"$guess$\", regex_pattern=\"$final_regex$\" "
+| map search="| inputlookup words.csv | regex words=\"$final_regex$\" | eval guess=\"$guess$\", regex_pattern=\"$final_regex$\" "
 | rename words as possible_solutions 
 | rex field=possible_solutions mode=sed "s/(?=\\w)/ /g" 
 | makemv possible_solutions delim=" " 
