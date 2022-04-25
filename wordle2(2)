@@ -1,0 +1,106 @@
+fields regex_pattern
+| rename regex_pattern as p_regex 
+| rex field=p_regex "^\(\?\=(?<p_regex_G>[\w\.]{5})\)" 
+| rex field=p_regex_G mode=sed "s/(?=\w|\.)/ /g" 
+| makemv delim=" " p_regex_G 
+| rex field=p_regex max_match=0 "\(\?\=\.\*(?<p_regex_Y>\w)\.\*\)" 
+| rex field=p_regex max_match=0 "\[\^(?<p_regex_exclusion>\w*)\]" 
+    ```convert guess and response values into whitespace delimited strings, then an mvfield``` 
+| eval guess=lower("$guess$"), response=upper("$response$") 
+| rex field=guess mode=sed "s/(?=\w)/ /g" 
+| rex field=response mode=sed "s/(?=\w)/ /g" 
+| eval guess=trim(guess), response=trim(response) 
+| makemv delim=" " guess 
+| makemv delim=" " response 
+    ```build character portion of explicit letter matching regex pattern based on 'G' position in response``` 
+| eval regex_G=case(mvindex(response,0)=="G",mvappend(regex_G,mvindex(guess,0)),NOT mvindex(response,0)=="G" AND match(mvindex(p_regex_G,0),"\w"),mvappend(regex_G,mvindex(p_regex_G,0)),1=1,mvappend(regex_G,".")) 
+| eval regex_G=case(mvindex(response,1)=="G",mvappend(regex_G,mvindex(guess,1)),NOT mvindex(response,1)=="G" AND match(mvindex(p_regex_G,1),"\w"),mvappend(regex_G,mvindex(p_regex_G,1)),1=1,mvappend(regex_G,".")) 
+| eval regex_G=case(mvindex(response,2)=="G",mvappend(regex_G,mvindex(guess,2)),NOT mvindex(response,2)=="G" AND match(mvindex(p_regex_G,2),"\w"),mvappend(regex_G,mvindex(p_regex_G,2)),1=1,mvappend(regex_G,".")) 
+| eval regex_G=case(mvindex(response,3)=="G",mvappend(regex_G,mvindex(guess,3)),NOT mvindex(response,3)=="G" AND match(mvindex(p_regex_G,3),"\w"),mvappend(regex_G,mvindex(p_regex_G,3)),1=1,mvappend(regex_G,".")) 
+| eval regex_G=case(mvindex(response,4)=="G",mvappend(regex_G,mvindex(guess,4)),NOT mvindex(response,4)=="G" AND match(mvindex(p_regex_G,4),"\w"),mvappend(regex_G,mvindex(p_regex_G,4)),1=1,mvappend(regex_G,"."))
+| fields - p_regex_G
+    ```build character portion of letter matching capture groups based on 'Y' position in response``` 
+| eval regex_Y=if(mvindex(response,0)=="Y",mvappend(regex_Y,mvindex(guess,0)),mvappend(regex_Y,"")) 
+| eval regex_Y=if(mvindex(response,1)=="Y",mvappend(regex_Y,mvindex(guess,1)),mvappend(regex_Y,"")) 
+| eval regex_Y=if(mvindex(response,2)=="Y",mvappend(regex_Y,mvindex(guess,2)),mvappend(regex_Y,"")) 
+| eval regex_Y=if(mvindex(response,3)=="Y",mvappend(regex_Y,mvindex(guess,3)),mvappend(regex_Y,"")) 
+| eval regex_Y=if(mvindex(response,4)=="Y",mvappend(regex_Y,mvindex(guess,4)),mvappend(regex_Y,""))
+| eval regex_Y=mvappend(regex_Y,p_regex_Y)
+| fields - p_regex_Y
+    ```build set of characters to be excluded in every position based on matching 'B' position(s) to corresponding location(s) in guess ``` 
+| eval exclusion_all=if(mvindex(response,0)=="B",mvappend(exclusion_all,mvindex(guess,0)),mvappend(exclusion_all,"")) 
+| eval exclusion_all=if(mvindex(response,1)=="B",mvappend(exclusion_all,mvindex(guess,1)),mvappend(exclusion_all,"")) 
+| eval exclusion_all=if(mvindex(response,2)=="B",mvappend(exclusion_all,mvindex(guess,2)),mvappend(exclusion_all,"")) 
+| eval exclusion_all=if(mvindex(response,3)=="B",mvappend(exclusion_all,mvindex(guess,3)),mvappend(exclusion_all,"")) 
+| eval exclusion_all=if(mvindex(response,4)=="B",mvappend(exclusion_all,mvindex(guess,4)),mvappend(exclusion_all,""))
+    ```prepare exclusion_all to remove entries that also match a 'G' or 'Y' value``` 
+| mvexpand exclusion_all
+    ```retain only exclusion_all letters that aren't in 'G' or 'Y' set```
+| eval exclusion_all=if(match(exclusion_all,"^$|^\s*$"),"###",exclusion_all)     
+| where exclusion_all!=mvindex(regex_G,0) AND exclusion_all!=mvindex(regex_G,1) AND exclusion_all!=mvindex(regex_G,2) AND exclusion_all!=mvindex(regex_G,3) AND exclusion_all!=mvindex(regex_G,4) AND exclusion_all!=mvindex(regex_Y,0) AND exclusion_all!=mvindex(regex_Y,1) AND exclusion_all!=mvindex(regex_Y,2) AND exclusion_all!=mvindex(regex_Y,3) AND exclusion_all!=mvindex(regex_Y,4)
+| rex mode=sed field=exclusion_all "s/###//g" 
+| eventstats values(exclusion_all) as exclusion_all
+| head 1
+    ```convert letters matched to 'Y' positions as individual capture groups``` 
+| eval regex_Y=mvdedup(regex_Y), regex_Y=mvmap(regex_Y,"(?=.*".regex_Y.".*)"), regex_Y=mvfilter(match(regex_Y,".*\w.*"))
+    ```create array of letters to be excluded in specific positions based on location of 'Y' values``` 
+| eval exclusion_spec=if(mvindex(response,0)=="Y" OR mvindex(response,0)=="B",mvappend(exclusion_spec,mvindex(guess,0)),mvappend(exclusion_spec,".")) 
+| eval exclusion_spec=if(mvindex(response,1)=="Y" OR mvindex(response,1)=="B",mvappend(exclusion_spec,mvindex(guess,1)),mvappend(exclusion_spec,".")) 
+| eval exclusion_spec=if(mvindex(response,2)=="Y" OR mvindex(response,2)=="B",mvappend(exclusion_spec,mvindex(guess,2)),mvappend(exclusion_spec,".")) 
+| eval exclusion_spec=if(mvindex(response,3)=="Y" OR mvindex(response,3)=="B",mvappend(exclusion_spec,mvindex(guess,3)),mvappend(exclusion_spec,".")) 
+| eval exclusion_spec=if(mvindex(response,4)=="Y" OR mvindex(response,4)=="B",mvappend(exclusion_spec,mvindex(guess,4)),mvappend(exclusion_spec,"."))
+    ```convert array of regex_G values into explicit known letter location capture group``` 
+| eval regex_G="(?=".mvindex(regex_G,0).mvindex(regex_G,1).mvindex(regex_G,2).mvindex(regex_G,3).mvindex(regex_G,4).")"
+    ```convert array of regex_Y values back into a single index string``` 
+| eval regex_Y=case(isnull(mvindex(regex_Y,0)),"",isnull(mvindex(regex_Y,1)),mvindex(regex_Y,0),isnull(mvindex(regex_Y,2)),mvindex(regex_Y,0).mvindex(regex_Y,1),isnull(mvindex(regex_Y,3)),mvindex(regex_Y,0).mvindex(regex_Y,1).mvindex(regex_Y,2),isnull(mvindex(regex_Y,4)),mvindex(regex_Y,0).mvindex(regex_Y,1).mvindex(regex_Y,2).mvindex(regex_Y,3),isnotnull(mvindex(regex_Y,0)) AND isnotnull(mvindex(regex_Y,1)) AND isnotnull(mvindex(regex_Y,2)) AND isnotnull(mvindex(regex_Y,3)) AND isnotnull(mvindex(regex_Y,4)),mvindex(regex_Y,0).mvindex(regex_Y,1).mvindex(regex_Y,2).mvindex(regex_Y,3).mvindex(regex_Y,4))
+    ```combine both sets of capture groups into a single string``` 
+| eval regex_capture=regex_G.regex_Y
+    ```convert array of exclusion_all values into a single string``` 
+| eval exclusion_set=case(isnull(mvindex(exclusion_all,0)),"",isnull(mvindex(exclusion_all,1)),mvindex(exclusion_all,0),isnull(mvindex(exclusion_all,2)),mvindex(exclusion_all,0).mvindex(exclusion_all,1),isnull(mvindex(exclusion_all,3)),mvindex(exclusion_all,0).mvindex(exclusion_all,1).mvindex(exclusion_all,2),isnull(mvindex(exclusion_all,4)),mvindex(exclusion_all,0).mvindex(exclusion_all,1).mvindex(exclusion_all,2).mvindex(exclusion_all,3),isnotnull(mvindex(exclusion_all,0)) AND isnotnull(mvindex(exclusion_all,1)) AND isnotnull(mvindex(exclusion_all,2)) AND isnotnull(mvindex(exclusion_all,3)) AND isnotnull(mvindex(exclusion_all,4)),mvindex(exclusion_all,0).mvindex(exclusion_all,1).mvindex(exclusion_all,2).mvindex(exclusion_all,3).mvindex(exclusion_all,4))
+| eval regex_exclusion=if(mvindex(exclusion_spec,0)==".",mvappend(regex_exclusion,exclusion_set.mvindex(p_regex_exclusion,0)),mvappend(regex_exclusion,exclusion_set.mvindex(exclusion_spec,0).mvindex(p_regex_exclusion,0))) 
+| eval regex_exclusion=if(mvindex(exclusion_spec,1)==".",mvappend(regex_exclusion,exclusion_set.mvindex(p_regex_exclusion,1)),mvappend(regex_exclusion,exclusion_set.mvindex(exclusion_spec,1).mvindex(p_regex_exclusion,1))) 
+| eval regex_exclusion=if(mvindex(exclusion_spec,2)==".",mvappend(regex_exclusion,exclusion_set.mvindex(p_regex_exclusion,2)),mvappend(regex_exclusion,exclusion_set.mvindex(exclusion_spec,2).mvindex(p_regex_exclusion,2))) 
+| eval regex_exclusion=if(mvindex(exclusion_spec,3)==".",mvappend(regex_exclusion,exclusion_set.mvindex(p_regex_exclusion,3)),mvappend(regex_exclusion,exclusion_set.mvindex(exclusion_spec,3).mvindex(p_regex_exclusion,3))) 
+| eval regex_exclusion=if(mvindex(exclusion_spec,4)==".",mvappend(regex_exclusion,exclusion_set.mvindex(p_regex_exclusion,4)),mvappend(regex_exclusion,exclusion_set.mvindex(exclusion_spec,4).mvindex(p_regex_exclusion,4))) 
+| mvexpand regex_exclusion 
+| streamstats count 
+| eval count=count-1 
+| rex field=regex_exclusion mode=sed "s/(?=\w)/ /g" 
+| makemv regex_exclusion delim=" " 
+| eval regex_exclusion=mvsort(mvdedup(regex_exclusion)) 
+| streamstats values(regex_exclusion) as regex_exclusion window=1 
+| nomv regex_exclusion 
+| rex field=regex_exclusion mode=sed "s/ //g" 
+| eval regex_exclusion="[^".regex_exclusion."]" 
+| sort count 
+| fillnull regex_exclusion value="."
+| eventstats list(regex_exclusion) as regex_exclusion 
+| head 1 
+| eval final_regex=regex_capture.mvindex(regex_exclusion,0).mvindex(regex_exclusion,1).mvindex(regex_exclusion,2).mvindex(regex_exclusion,3).mvindex(regex_exclusion,4)
+| rex field=final_regex "\(\?\=(?<all_G_edge_case>\w{5}).|$" 
+| eval final_regex=if(match(all_G_edge_case,"\w{5}"),all_G_edge_case,final_regex) 
+| rex field=final_regex mode=sed "s/\[\^\]/./g"
+| map search="| inputlookup bv_words.csv | regex words=\"$final_regex$\" | eval guess=\"$guess$\", regex_pattern=\"$final_regex$\" "
+| rename words as possible_solutions 
+| rex field=possible_solutions mode=sed "s/(?=\\w)/ /g" 
+| makemv possible_solutions delim=" " 
+| eval letter0=mvindex(possible_solutions,0), letter1=mvindex(possible_solutions,1), letter2=mvindex(possible_solutions,2), letter3=mvindex(possible_solutions,3), letter4=mvindex(possible_solutions,4) 
+| eventstats count as letter0_count by letter0 
+| eventstats count as letter1_count by letter1 
+| eventstats count as letter2_count by letter2 
+| eventstats count as letter3_count by letter3 
+| eventstats count as letter4_count by letter4 
+| eventstats max(letter*_count) as max_letter*_count 
+| eventstats dc(letter*) as unique_letter*_count 
+| fields - *_count_count 
+| eval letter0_score=((unique_letter0_count)*letter0_count/max_letter0_count), letter1_score=((unique_letter1_count)*letter1_count/max_letter1_count), letter2_score=((unique_letter2_count)*letter2_count/max_letter2_count), letter3_score=((unique_letter3_count)*letter3_count/max_letter3_count), letter4_score=((unique_letter4_count)*letter4_count/max_letter4_count) 
+| eval word_score=letter0_score+letter1_score+letter2_score+letter3_score+letter4_score 
+| eval unique_letters_in_word=mvcount(mvdedup(possible_solutions)) 
+| eval word_score=word_score*unique_letters_in_word 
+| eventstats max(word_score) as max_word_score 
+| eval word_score=round(word_score/max_word_score,3) 
+| sort - word_score 
+| nomv possible_solutions 
+| rex field=possible_solutions mode=sed "s/ //g" 
+| table guess regex_pattern possible_solutions word_score max_word_score unique_letters_in_word *letter0* *letter1* *letter2* *letter3* *letter4* * 
+| stats list(possible_solutions) as possible_solutions list(word_score) as word_score by guess regex_pattern
